@@ -40,7 +40,13 @@ H/15 * * * *</spec>
     </hudson.triggers.SCMTrigger>
   </triggers>
   <concurrentBuild>false</concurrentBuild>
-  <builders/>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>wget ${JENKINS_URL}jnlpJars/jenkins-cli.jar
+
+java -jar jenkins-cli.jar -s ${JENKINS_URL} -i /var/lib/jenkins/.ssh/id_rsa safe-restart</command>
+    </hudson.tasks.Shell>
+  </builders>
   <publishers>
     <hudson.plugins.git.GitPublisher plugin="git@2.4.0">
       <configVersion>2</configVersion>
