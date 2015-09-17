@@ -1,6 +1,8 @@
 #!/usr/bin/python -u
 
 import os
+import shutil
+
 import jenkins
 
 from argparse import ArgumentParser
@@ -16,19 +18,26 @@ class JenkinsUtility:
                 password=self.passwd)
         self.info = self.server.get_info()
         
+    def run_cmd(self, cmd):
+        print(cmd)
+        os.system(cmd)
+        
     def path_exists(self, path):
         if not os.path.exists(path):
             os.makedirs(path)
             
     def install_plugin(self, name, version):
-        plugin = '"%s@%s"' % (name, version)
-        url = "%s/pluginManager/installNecessaryPlugins" % self.info["primaryView"]["url"]
-        request = jenkins.Request(url,
-                data="<jenkins><install plugin=%s /></jenkins>" % plugin,
+        plugin = '"{}@{}"'.format(name, version)
+        url = "{}/pluginManager/installNecessaryPlugins".format(
+                self.info["primaryView"]["url"])
+        request = self.server.Request(url,
+                data="<jenkins><install plugin={} /></jenkins>".format(plugin),
                 headers={"Content-Type": "text/xml",
-                    "Authorization": jenkins.auth_headers(self.user, self.passwd)})
+                    "Authorization": self.server.auth_headers(self.user,
+                        self.passwd)}
+                    )
                 
-        print("Install %s." % plugin)
+        print("Install {}.".format(plugin))
         res = self.server.jenkins_open(request)
     
     def verify_plugins(self, confFile="jenkins.cfg"):
@@ -36,7 +45,7 @@ class JenkinsUtility:
         
         print "Installed Plugins:"
         for p in self.server.get_plugins_info():
-            print "\t%s: %s" % (p["shortName"], p["version"])
+            print "\t{}: {}".format(p["shortName"], p["version"])
             plugins[p["shortName"]] = p["version"]
 
         conf = SafeConfigParser()
@@ -44,49 +53,89 @@ class JenkinsUtility:
 
         for p in conf.items("Plugins"):
             installed = plugins.get(p[0])
-            if installed is not None:
-                # Verify plugin version
-                if LooseVersion(installed) >= LooseVersion(p[1]):
-                    continue
+            # Verify plugin version
+            if(installed is not None
+                    and LooseVersion(installed) >= LooseVersion(p[1])):
+                continue
             
             self.install_plugin(*p)
 
     def copy_job(self, jobName):
         jobConf = self.server.get_job_config(jobName) # XML to write out
         
-        path = "jobs/%s" % jobName
+        path = "jobs/{}".format(jobName)
         self.path_exists(path)
         
-        with open("%s/config.xml" % path, "w") as f:
+        with open("{}/config.xml".format(path), "w") as f:
             f.write(jobConf)
         
-        print("%s/config.xml created." % path)
+        print("\tCreated {}/config.xml".format(path))
     
     def copy_view(self, viewName):
         viewConf = self.server.get_view_config(viewName) # XML to write out
         # No centralized "views" location
         self.path_exists("views")
         
-        with open("views/%s.xml" % viewName, "w") as f:
+        with open("views/{}.xml".format(viewName), "w") as f:
             f.write(viewConf)
 
-        print("views/%s.xml created." % viewName)
+        print("views/{}.xml created.".format(viewName))
+
+    def copy_scriptler(self):
+        if os.path.exists("scriptler"):
+            shutil.rmtree("scriptler")
+        cmd = "git clone {}scriptler.git".format(
+                self.info["primaryView"]["url"])
+        self.run_cmd(cmd)
         
     def copy_jenkins(self):
+        print("Copy Jobs:")
         for job in self.info.get("jobs"):
-            print("Copy job %s." % job.get("name"))
             self.copy_job(job.get("name"))
 
         for view in [v for v in self.info.get("views")
                 if v.get("name") != "All"]:
-            print("Copy view %s." % view.get("name"))
-            self.copy_view(view.get("name"))
+            print("Copy view {}.".format(view["name"]))
+            self.copy_view(view["name"])
+        
+        self.copy_scriptler()
     
+    def verify_job(self, job, config_xml):
+        if self.server.job_exists(job):
+            self.server.reconfig_job(job, config_xml)
+        else:
+            self.server.create_job(job, config_xml)
+    
+    def verify_view(self, view, config_xml):
+        if self.server.view_exists(view):
+            self.server.reconfig_view(view, config_xml)
+        else:
+            self.server.create_view(view, config_xml)
+            
+    def update_jobs(self):
+        print("Updating Jobs:")
+        for job in os.listdir("jobs"):
+            with open(os.path.join("jobs", job, "config.xml"), "r") as f:
+                config_xml = f.read()
+            print("\tUpdate/create {} job.".format(job))
+            self.verify_job(job, config_xml)
+            
+    def update_views(self):
+        print("Updating Views:")
+        for view in os.listdir("views"):
+            with open(os.path.join("views", view), "r") as f:
+                config_xml = f.read()
+            view = view.rstrip(".xml")
+            print("\tUpdate/create {} view.".format(view))
+            self.verify_view(view, config_xml)
+            
     def update_jenkins(self, confFile):
         version = self.server.get_version()
-        print("Jenkins ver: %s" % version)
+        print("Jenkins ver: {}".format(version))
         
         self.verify_plugins(confFile)
+        self.update_jobs()
+        self.update_views()
             
 if __name__ == "__main__":
     parser = ArgumentParser(description="Utility to backup and setup jenkins.")
@@ -108,10 +157,10 @@ if __name__ == "__main__":
     ju = JenkinsUtility(args.username, args.password, args.host)
     
     if args.copy:
-        print("Copy existing Jenkins instance at %s." % args.host)
+        print("Copy existing Jenkins instance at {}.".format(args.host))
         ju.copy_jenkins()
     elif args.update:
-        print("Update existing Jenkins instance at %s." % args.host)
+        print("Update existing Jenkins instance at {}.".format(args.host))
         ju.update_jenkins(args.config)
     else:
         parser.print_help()
