@@ -11,16 +11,20 @@ from distutils.version import LooseVersion
 
 class JenkinsUtility:
     def __init__(self, user, passwd, host="http://localhost:8080"):
-        self.user = user
-        self.passwd = passwd
-        self.host = host
-        self.server = jenkins.Jenkins(self.host, username=self.user,
-                password=self.passwd)
+        self.server = jenkins.Jenkins(host, username=user, password=passwd)
         self.info = self.server.get_info()
+        self.url = self.info["primaryView"]["url"]
         
     def run_cmd(self, cmd):
         print(cmd)
         os.system(cmd)
+    
+    def download_cli_jar(self):
+        # http://[server]/jnlpJars/jenkins-cli.jar
+        self.run_cmd("wget {}jnlpJars/jenkins-cli.jar".format(self.url))
+    
+    def run_jenkins_cli(self, cmd):
+        self.run_cmd("java -jar jenkins-cli.jar -s {} {}".format())
         
     def path_exists(self, path):
         if not os.path.exists(path):
@@ -28,14 +32,10 @@ class JenkinsUtility:
             
     def install_plugin(self, name, version):
         plugin = '"{}@{}"'.format(name, version)
-        url = "{}/pluginManager/installNecessaryPlugins".format(
-                self.info["primaryView"]["url"])
+        url = "{}/pluginManager/installNecessaryPlugins".format(self.url)
         request = self.server.Request(url,
                 data="<jenkins><install plugin={} /></jenkins>".format(plugin),
-                headers={"Content-Type": "text/xml",
-                    "Authorization": self.server.auth_headers(self.user,
-                        self.passwd)}
-                    )
+                headers={"Content-Type": "text/xml"})
                 
         print("Install {}.".format(plugin))
         res = self.server.jenkins_open(request)
@@ -82,10 +82,12 @@ class JenkinsUtility:
         print("views/{}.xml created.".format(viewName))
 
     def copy_scriptler(self):
+        """ If security is configured this method requires that the
+        Anonymouse group has Overall:Read permissions.
+        """
         if os.path.exists("scriptler"):
             shutil.rmtree("scriptler")
-        cmd = "git clone {}scriptler.git".format(
-                self.info["primaryView"]["url"])
+        cmd = "git clone {}scriptler.git".format(self.url)
         self.run_cmd(cmd)
         
     def copy_jenkins(self):
@@ -130,8 +132,11 @@ class JenkinsUtility:
             self.verify_view(view, config_xml)
             
     def update_jenkins(self, confFile):
-        version = self.server.get_version()
-        print("Jenkins ver: {}".format(version))
+        try:
+            version = self.server.get_version()
+            print("Jenkins ver: {}".format(version))
+        except jenkins.BadHTTPException as e:
+            print("Unable to get the Jenkins version.\n\t{}".format(e))
         
         self.verify_plugins(confFile)
         self.update_jobs()
