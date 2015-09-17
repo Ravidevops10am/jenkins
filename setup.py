@@ -24,6 +24,7 @@ class JenkinsUtility:
         self.run_cmd("wget {}jnlpJars/jenkins-cli.jar".format(self.url))
     
     def run_jenkins_cli(self, cmd):
+        self.download_cli_jar()
         self.run_cmd("java -jar jenkins-cli.jar -s {} {}".format(self.url, cmd))
         
     def restart_jenkins(self):
@@ -153,7 +154,7 @@ class JenkinsUtility:
         # XXX Verify local jenkins/config.xml contains global properties (from jenkins.cfg)
         # merge with remote jenkins/config.xml?
         # print("Update Jenkins config.xml...")
-        # host = self.url.split("//")[1].split(":")[0]
+        host = self.url.split("//")[1].split(":")[0]
         # self.run_cmd("scp config.xml {}:".format(host))
         # self.run_cmd("ssh {} 'sudo mv config.xml {}'".format(host, jenkinsPath))
         
