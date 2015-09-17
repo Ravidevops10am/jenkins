@@ -24,8 +24,12 @@ class JenkinsUtility:
         self.run_cmd("wget {}jnlpJars/jenkins-cli.jar".format(self.url))
     
     def run_jenkins_cli(self, cmd):
-        self.run_cmd("java -jar jenkins-cli.jar -s {} {}".format())
+        self.run_cmd("java -jar jenkins-cli.jar -s {} {}".format(self.url, cmd))
         
+    def restart_jenkins(self):
+        print("Restarting Jenkins.")
+        self.run_jenkins_cli("safe-restart")
+            
     def path_exists(self, path):
         if not os.path.exists(path):
             os.makedirs(path)
@@ -79,7 +83,7 @@ class JenkinsUtility:
         with open("views/{}.xml".format(viewName), "w") as f:
             f.write(viewConf)
 
-        print("views/{}.xml created.".format(viewName))
+        print("\tCreated views/{}.xml".format(viewName))
 
     def copy_scriptler(self):
         """ If security is configured this method requires that the
@@ -90,14 +94,18 @@ class JenkinsUtility:
         cmd = "git clone {}scriptler.git".format(self.url)
         self.run_cmd(cmd)
         
-    def copy_jenkins(self):
+    def copy_jenkins(self, jenkinsPath):
+        print("Copy Jenkins config.xml...")
+        host = self.url.split("//")[1].split(":")[0]
+        self.run_cmd("scp {}:{}/config.xml .".format(host, jenkinsPath))
+        
         print("Copy Jobs:")
         for job in self.info.get("jobs"):
             self.copy_job(job.get("name"))
-
+        
+        print("Copy Views:")
         for view in [v for v in self.info.get("views")
                 if v.get("name") != "All"]:
-            print("Copy view {}.".format(view["name"]))
             self.copy_view(view["name"])
         
         self.copy_scriptler()
@@ -131,7 +139,7 @@ class JenkinsUtility:
             print("\tUpdate/create {} view.".format(view))
             self.verify_view(view, config_xml)
             
-    def update_jenkins(self, confFile):
+    def update_jenkins(self, confFile, jenkinsPath):
         try:
             version = self.server.get_version()
             print("Jenkins ver: {}".format(version))
@@ -141,9 +149,29 @@ class JenkinsUtility:
         self.verify_plugins(confFile)
         self.update_jobs()
         self.update_views()
+        
+        # XXX Verify local jenkins/config.xml contains global properties (from jenkins.cfg)
+        # merge with remote jenkins/config.xml?
+        # print("Update Jenkins config.xml...")
+        # host = self.url.split("//")[1].split(":")[0]
+        # self.run_cmd("scp config.xml {}:".format(host))
+        # self.run_cmd("ssh {} 'sudo mv config.xml {}'".format(host, jenkinsPath))
+        
+        print("Update Scriptler...")
+        self.run_cmd("scp scriptler/* {}:scriptler".format(host))
+        self.run_cmd("ssh {} 'sudo mv scriptler/* {}/scriptler/scripts'".format(
+            host, jenkinsPath))
+        
+        self.restart_jenkins()
             
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Utility to backup and setup jenkins.")
+    description = ["Utility to backup and setup/update Jenkins.",
+        "Recommend running ssh-copy-id [jenkinshost] before executing this",
+            "script to alleviate password prompts.",
+        "In order to successfully update the jenkins/config.xml file",
+        "the user must have sudo permissions on the Jenkins instance."]
+    parser = ArgumentParser(description=" ".join(description))
+    
     parser.add_argument("username", action="store",
         help="Jenkins username for authentication.")
     parser.add_argument("password", action="store",
@@ -155,17 +183,20 @@ if __name__ == "__main__":
         help="Back up the existing local Jenkins instance.")
     parser.add_argument("-u", "--update", action="store_true", default=False,
         help="Update the local Jenkins instance from pwd.")
+    parser.add_argument("-p", "--jenkinsPath", action="store",
+            default="/var/lib/jenkins",
+            help="Path to the Jenkins installation, default /var/lib/jenkins.")
     parser.add_argument("--config", action="store", default="jenkins.cfg",
         help="Location of the config file, default is 'jenkins.cfg'.")
     
     args = parser.parse_args()
     ju = JenkinsUtility(args.username, args.password, args.host)
     
-    if args.copy:
+    if(args.copy and args.jenkinsPath):
         print("Copy existing Jenkins instance at {}.".format(args.host))
-        ju.copy_jenkins()
-    elif args.update:
+        ju.copy_jenkins(args.jenkinsPath)
+    elif(args.update and args.jenkinsPath):
         print("Update existing Jenkins instance at {}.".format(args.host))
-        ju.update_jenkins(args.config)
+        ju.update_jenkins(args.config, args.jenkinsPath)
     else:
         parser.print_help()
