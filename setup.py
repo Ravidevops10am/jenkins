@@ -151,12 +151,7 @@ class JenkinsUtility:
         self.update_jobs()
         self.update_views()
         
-        # XXX Verify local jenkins/config.xml contains global properties (from jenkins.cfg)
-        # merge with remote jenkins/config.xml?
-        # print("Update Jenkins config.xml...")
         host = self.url.split("//")[1].split(":")[0]
-        # self.run_cmd("scp config.xml {}:".format(host))
-        # self.run_cmd("ssh {} 'sudo mv config.xml {}'".format(host, jenkinsPath))
         
         print("Update Scriptler...")
         self.run_cmd("scp scriptler/* {}:scriptler".format(host))
@@ -166,11 +161,12 @@ class JenkinsUtility:
         self.restart_jenkins()
             
 if __name__ == "__main__":
-    description = ["Utility to backup and setup/update Jenkins.",
-        "Recommend running ssh-copy-id [jenkinshost] before executing this",
-            "script to alleviate password prompts.",
-        "In order to successfully update the jenkins/config.xml file",
-        "the user must have sudo permissions on the Jenkins instance."]
+    description = ["Utility to backup and update Jenkins.",
+        "Recommend running 'ssh-copy-id user@[jenkinshost]' before executing",
+            "this script to eliminate password prompts",
+            "(for scriptler and jenkins/config.xml).",
+        "The jenkins/config.xml file can be copied, but not updated",
+            "because there are no API options for restoring its content."]
     parser = ArgumentParser(description=" ".join(description))
     
     parser.add_argument("username", action="store",
